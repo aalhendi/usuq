@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 prisma-client-rust = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.0" }
+serde = { version = "1.0.144", features = ["derive"] }
+tokio = { version = "1.21.0", features = ["macros", "rt-multi-thread"] }
