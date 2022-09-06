@@ -1,15 +1,12 @@
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
-use axum::{extract::Extension, Router};
-use std::sync::Arc;
+use axum::{extract::Extension, http::StatusCode, response::IntoResponse, Router};
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 mod prisma;
 mod routes;
 
 #[tokio::main]
 // TODO: Remove unwraps and do real error handling
-// TODO: Check for bad urls
 // TODO: Add tests
 
 async fn main() {
@@ -29,6 +26,6 @@ async fn main() {
         .unwrap();
 }
 
-async fn handle_404() -> impl IntoResponse{
+async fn handle_404() -> impl IntoResponse {
     (StatusCode::NOT_FOUND, "lol, not found.")
 }

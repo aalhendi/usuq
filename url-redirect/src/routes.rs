@@ -1,7 +1,7 @@
 use axum::{
     extract::{Json, Path},
     http::StatusCode,
-    response::{IntoResponse, Response, Redirect},
+    response::{IntoResponse, Redirect, Response},
     routing::get,
     Extension, Router,
 };
@@ -48,19 +48,18 @@ async fn handle_entry_post(
     db: Database,
     Json(input): Json<EntryRequest>,
 ) -> AppJsonResult<url::Data> {
+    let input_url = ::url::Url::parse(input.url.as_str())?;
+
     let data = db
         .url()
-        .create(input.url, input.slug, vec![])
+        .create(input_url.into(), input.slug, vec![])
         .exec()
         .await?;
 
     Ok(Json::from(data))
 }
 
-async fn handle_entry_get(
-    db: Database,
-    Path(slug): Path<String>,
-) -> AppResult<Redirect> {
+async fn handle_entry_get(db: Database, Path(slug): Path<String>) -> AppResult<Redirect> {
     let entry = db
         .url()
         .find_unique(prisma::url::slug::equals(slug)) // Query to execute
@@ -68,24 +67,22 @@ async fn handle_entry_get(
         .await?;
 
     let entry_data = match entry {
-        Some(data)=>data,
-        None => panic!("Couldn't find data in entry")
+        Some(data) => data,
+        None => panic!("Couldn't find data in entry"),
     };
 
     Ok(Redirect::to(entry_data.url.as_str()))
 }
 
 async fn handle_entry_delete(db: Database, Path(slug): Path<String>) -> AppResult<StatusCode> {
-    db.url()
-        .delete(url::slug::equals(slug))
-        .exec()
-        .await?;
+    db.url().delete(url::slug::equals(slug)).exec().await?;
 
     Ok(StatusCode::OK)
 }
 
 enum AppError {
     PrismaError(QueryError),
+    UrlParseError(::url::ParseError),
     NotFound,
 }
 
@@ -98,17 +95,52 @@ impl From<QueryError> for AppError {
     }
 }
 
+impl From<::url::ParseError> for AppError {
+    fn from(error: ::url::ParseError) -> Self {
+        match error {
+            ::url::ParseError::EmptyHost => AppError::UrlParseError(::url::ParseError::EmptyHost),
+            ::url::ParseError::IdnaError => AppError::UrlParseError(::url::ParseError::IdnaError),
+            ::url::ParseError::InvalidPort => {
+                AppError::UrlParseError(::url::ParseError::InvalidPort)
+            }
+            ::url::ParseError::InvalidIpv4Address => {
+                AppError::UrlParseError(::url::ParseError::InvalidIpv4Address)
+            }
+            ::url::ParseError::InvalidIpv6Address => {
+                AppError::UrlParseError(::url::ParseError::InvalidIpv6Address)
+            }
+            ::url::ParseError::InvalidDomainCharacter => {
+                AppError::UrlParseError(::url::ParseError::InvalidDomainCharacter)
+            }
+            ::url::ParseError::RelativeUrlWithoutBase => {
+                AppError::UrlParseError(::url::ParseError::RelativeUrlWithoutBase)
+            }
+            ::url::ParseError::RelativeUrlWithCannotBeABaseBase => {
+                AppError::UrlParseError(::url::ParseError::RelativeUrlWithCannotBeABaseBase)
+            }
+            ::url::ParseError::SetHostOnCannotBeABaseUrl => {
+                AppError::UrlParseError(::url::ParseError::SetHostOnCannotBeABaseUrl)
+            }
+            ::url::ParseError::Overflow => AppError::UrlParseError(::url::ParseError::Overflow),
+            _ => panic!("Unknown Parse Error"),
+        }
+    }
+}
+
 // This centralizes all differents errors from our app in one place
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let status = match self {
+        let res = match self {
             AppError::PrismaError(error) if error.is_prisma_error::<UniqueKeyViolation>() => {
-                StatusCode::CONFLICT
+                (StatusCode::CONFLICT, format!("{}\n", error.to_string()))
             }
-            AppError::PrismaError(_) => StatusCode::BAD_REQUEST,
-            AppError::NotFound => StatusCode::NOT_FOUND,
+            AppError::PrismaError(error) => {
+                (StatusCode::BAD_REQUEST, format!("{}\n", error.to_string()))
+            }
+            AppError::NotFound => (StatusCode::NOT_FOUND, String::from("lol, not found.\n")),
+            AppError::UrlParseError(e) => (StatusCode::BAD_REQUEST, format!("{}\n", e.to_string())),
         };
 
-        status.into_response()
+        res.into_response()
     }
 }
