@@ -64,14 +64,9 @@ async fn handle_entry_get(db: Database, Path(slug): Path<String>) -> AppResult<R
         .url()
         .find_unique(prisma::url::slug::equals(slug)) // Query to execute
         .exec()
-        .await?;
+        .await?.ok_or_else(|| AppError::NotFound)?;
 
-    let entry_data = match entry {
-        Some(data) => data,
-        None => panic!("Couldn't find data in entry"),
-    };
-
-    Ok(Redirect::to(entry_data.url.as_str()))
+    Ok(Redirect::to(entry.url.as_str()))
 }
 
 async fn handle_entry_delete(db: Database, Path(slug): Path<String>) -> AppResult<StatusCode> {
