@@ -28,20 +28,20 @@ struct EntryRequest {
 /*
 
 / => GET, POST
-/l/:slug => PUT, DELETE
+/:slug => PUT, DELETE
 
 */
 pub fn create_route() -> Router {
     Router::new()
         .route("/", get(handle_index_get).post(handle_entry_post))
         .route(
-            "/l/:slug",
+            "/:slug",
             get(handle_entry_get).delete(handle_entry_delete),
         )
 }
 
 async fn handle_index_get(_db: Database) -> AppResult<Json<String>> {
-    Ok(Json::from("{value: helloworld}".to_string()))
+    Ok(Json::from("{value: who dis}".to_string()))
 }
 
 async fn handle_entry_post(
