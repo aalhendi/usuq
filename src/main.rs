@@ -1,5 +1,6 @@
 use axum::{extract::Extension, http::StatusCode, response::IntoResponse, Router};
-use std::{net::SocketAddr, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
+use tokio::net::TcpListener;
 use tokio_rusqlite::Connection;
 
 mod routes;
@@ -39,7 +40,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let db = Arc::new(Connection::open(db_file).await?);
-    
+
     println!("Initializing database at {}", db_file);
     initialize_db(&db).await?;
     println!("Database initialized successfully");
@@ -51,12 +52,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // fallback service for handling routes to unknown paths
     let app = app.fallback(axum::routing::get(handle_404));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
+    let listener = TcpListener::bind("127.0.0.1:8000").await?;
 
-    println!("Starting server on {addr}");
+    println!("Starting server on {addr}", addr = listener.local_addr()?);
 
-    let server = axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    let server = axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(handle_signals(Arc::clone(&db)));
 
     server.await?;
