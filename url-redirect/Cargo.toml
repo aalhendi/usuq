@@ -7,7 +7,14 @@ edition = "2021"
 
 [dependencies]
 axum = "0.6.20"
-prisma-client-rust = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.9" }
 serde = { version = "1.0.188", features = ["derive"] }
-tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1.33.0", features = [
+    "macros",
+    "rt-multi-thread",
+    "signal",
+] }
 url = "2.4.1"
+uuid = { version = "1.10.0", features = ["v4"] }
+# Automatically compile and link SQLite version to avoid common build issues
+tokio-rusqlite = { version = "0.6", features = ["bundled"] }
+thiserror = "1"

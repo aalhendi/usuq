@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::{Json, Path},
     http::StatusCode,
@@ -5,24 +7,27 @@ use axum::{
     routing::MethodRouter,
     Extension, Router,
 };
-use prisma_client_rust::{
-    prisma_errors::query_engine::{RecordNotFound, UniqueKeyViolation},
-    QueryError,
-};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+use tokio_rusqlite::{params, Connection, OptionalExtension};
+use uuid::Uuid;
 
-use serde::Deserialize;
-
-use crate::prisma::{self, url};
-
-type Database = Extension<std::sync::Arc<prisma::PrismaClient>>;
+type Database = Extension<Arc<Connection>>;
 type AppResult<T> = Result<T, AppError>;
 type AppJsonResult<T> = AppResult<Json<T>>;
 
-// Define all your requests schema
 #[derive(Deserialize)]
 struct EntryRequest {
     url: String,
     slug: String,
+}
+
+#[derive(Serialize)]
+struct EntryResponse {
+    id: String,
+    url: String,
+    slug: String,
+    created_at: String,
 }
 
 /*
@@ -52,64 +57,92 @@ async fn handle_index_get() -> AppResult<Json<String>> {
 async fn handle_entry_post(
     db: Database,
     Json(input): Json<EntryRequest>,
-) -> AppJsonResult<url::Data> {
+) -> AppJsonResult<EntryResponse> {
     let input_url = ::url::Url::parse(&input.url)?;
+    let id = Uuid::new_v4().to_string();
 
-    let data = db
-        .url()
-        .create(input_url.into(), input.slug, vec![])
-        .exec()
+    let entry = db
+        .call(move |conn| {
+            conn.execute(
+                "INSERT INTO Url (id, url, slug) VALUES (?1, ?2, ?3)",
+                params![id, input_url.to_string(), input.slug],
+            )?;
+
+            let entry = conn.query_row(
+                "SELECT id, url, slug, createdAt FROM Url WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(EntryResponse {
+                        id: row.get(0)?,
+                        url: row.get(1)?,
+                        slug: row.get(2)?,
+                        created_at: row.get(3)?,
+                    })
+                },
+            )?;
+
+            Ok(entry)
+        })
         .await?;
 
-    Ok(Json::from(data))
+    Ok(Json(entry))
 }
 
 async fn handle_entry_get(db: Database, Path(slug): Path<String>) -> AppResult<Redirect> {
-    let entry = db
-        .url()
-        .find_unique(prisma::url::slug::equals(slug)) // Query to execute
-        .exec()
+    let url = db
+        .call(move |conn| {
+            let url_maybe = conn
+                .query_row(
+                    "SELECT url FROM Url WHERE slug = ?1",
+                    params![slug],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?;
+
+            Ok(url_maybe)
+        })
         .await?
         .ok_or(AppError::NotFound)?;
 
-    Ok(Redirect::to(&entry.url))
+    Ok(Redirect::to(&url))
 }
 
 async fn handle_entry_delete(db: Database, Path(slug): Path<String>) -> AppResult<StatusCode> {
-    db.url().delete(url::slug::equals(slug)).exec().await?;
+    let rows_affected = db
+        .call(move |conn| {
+            let rows_affected = conn.execute("DELETE FROM Url WHERE slug = ?1", params![slug])?;
+            Ok(rows_affected)
+        })
+        .await?;
 
-    Ok(StatusCode::OK)
+    if rows_affected == 0 {
+        Err(AppError::NotFound)
+    } else {
+        Ok(StatusCode::OK)
+    }
 }
 
+#[derive(Error, Debug)]
 enum AppError {
-    PrismaError(QueryError),
-    UrlParseError(::url::ParseError),
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] tokio_rusqlite::Error),
+    #[error("URL parse error: {0}")]
+    UrlParseError(#[from] ::url::ParseError),
+    #[error("Not found")]
     NotFound,
 }
 
-impl From<QueryError> for AppError {
-    fn from(error: QueryError) -> Self {
-        match error {
-            e if e.is_prisma_error::<RecordNotFound>() => AppError::NotFound,
-            e => AppError::PrismaError(e),
-        }
-    }
-}
-
-impl From<::url::ParseError> for AppError {
-    fn from(error: ::url::ParseError) -> Self {
-        AppError::UrlParseError(error)
-    }
-}
 
 // This centralizes all differents errors from our app in one place
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            AppError::PrismaError(error) if error.is_prisma_error::<UniqueKeyViolation>() => {
-                (StatusCode::CONFLICT, error.to_string())
+            AppError::DatabaseError(ref e)
+                if e.to_string().contains("UNIQUE constraint failed") =>
+            {
+                (StatusCode::CONFLICT, "Slug already exists".to_string())
             }
-            AppError::PrismaError(error) => (StatusCode::BAD_REQUEST, error.to_string()),
+            AppError::DatabaseError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, "Not Found".to_string()),
             AppError::UrlParseError(e) => (StatusCode::BAD_REQUEST, e.to_string()),
         };

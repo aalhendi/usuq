@@ -1,7 +1,4 @@
 [workspace]
-default-members=["url-redirect"]
-members=[
-  "url-redirect",
-  "prisma-cli"
-]
-resolver='2'
+default-members = ["url-redirect"]
+members = ["url-redirect"]
+resolver = '2'
