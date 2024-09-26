@@ -3,35 +3,16 @@ use std::{path::Path, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_rusqlite::Connection;
 
+mod db;
+mod errors;
+mod models;
 mod routes;
 
-// TODO: Add tests
-
-async fn initialize_db(conn: &Connection) -> Result<(), tokio_rusqlite::Error> {
-    conn.call(|c| {
-        match c.execute_batch(
-            "
-            CREATE TABLE IF NOT EXISTS Url (
-                id TEXT PRIMARY KEY,
-                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-                url TEXT NOT NULL,
-                slug TEXT UNIQUE NOT NULL
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_slug ON Url(slug);
-            ",
-        ) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(tokio_rusqlite::Error::Rusqlite(e)),
-        }
-    })
-    .await?;
-
-    Ok(())
-}
+use crate::db::initialize_db;
+use crate::routes::create_route;
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let db_file = "../dev.db";
+    let db_file = "./dev.db";
 
     if !Path::new(db_file).exists() {
         println!("Database file does not exist. It will be created.");
@@ -46,10 +27,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("Database initialized successfully");
 
     let app = Router::new()
-        .nest("/", routes::create_route())
+        .nest("/", create_route())
         .layer(Extension(Arc::clone(&db)));
 
-    // fallback service for handling routes to unknown paths
     let app = app.fallback(axum::routing::get(handle_404));
 
     let listener = TcpListener::bind("127.0.0.1:8000").await?;
@@ -100,6 +80,7 @@ async fn handle_signals(conn: Arc<Connection>) {
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        panic!("Application error: {e}");
+        eprintln!("Application error: {e}");
+        std::process::exit(1);
     }
 }
