@@ -19,3 +19,4 @@ uuid = { version = "1.10", features = ["v4"] }
 # Automatically compile and link SQLite version to avoid common build issues
 tokio-rusqlite = { version = "0.6", features = ["bundled"] }
 thiserror = "1"
+figment = { version = "0.10", features = ["toml", "env"] }
