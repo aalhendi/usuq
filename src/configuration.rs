@@ -2,6 +2,7 @@ use figment::{
     providers::{Env, Format, Toml},
     Figment,
 };
+use secrecy::SecretString;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -9,10 +10,12 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
 }
+
 #[derive(serde::Deserialize, Debug)]
 pub struct ApplicationSettings {
     pub port: u16,
     pub host: String,
+    pub api_key: SecretString,
 }
 
 #[derive(Deserialize, Debug)]

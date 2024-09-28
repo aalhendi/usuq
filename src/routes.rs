@@ -2,33 +2,35 @@ use axum::{
     extract::{Json, Path},
     http::StatusCode,
     response::Redirect,
-    routing::MethodRouter,
+    routing::{delete, get, post},
     Extension, Router,
 };
 use std::sync::Arc;
 use tokio_rusqlite::Connection;
 use uuid::Uuid;
 
-use crate::db::{create_entry, delete_entry_by_slug, get_entry_by_slug};
 use crate::errors::AppError;
 use crate::models::{EntryRequest, EntryResponse};
+use crate::{
+    db::{create_entry, delete_entry_by_slug, get_entry_by_slug},
+    middleware::api_key_auth,
+};
 
 type Database = Extension<Arc<Connection>>;
 type AppResult<T> = Result<T, AppError>;
 type AppJsonResult<T> = AppResult<Json<T>>;
 
 pub fn create_route() -> Router {
-    let route_root = MethodRouter::new()
-        .get(handle_index_get)
-        .post(handle_entry_post);
+    let protected_routes = Router::new()
+        .route("/", post(handle_entry_post))
+        .route("/:slug", delete(handle_entry_delete))
+        .route_layer(axum::middleware::from_fn(api_key_auth));
 
-    let route_slug = MethodRouter::new()
-        .get(handle_entry_get)
-        .delete(handle_entry_delete);
+    let public_routes = Router::new()
+        .route("/", get(handle_index_get))
+        .route("/:slug", get(handle_entry_get));
 
-    Router::new()
-        .route("/", route_root)
-        .route("/:slug", route_slug)
+    public_routes.merge(protected_routes)
 }
 
 async fn handle_index_get() -> AppResult<Json<String>> {

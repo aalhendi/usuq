@@ -7,6 +7,7 @@ use tokio_rusqlite::Connection;
 mod configuration;
 mod db;
 mod errors;
+mod middleware;
 mod models;
 mod routes;
 
@@ -14,7 +15,7 @@ use crate::db::initialize_db;
 use crate::routes::create_route;
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Settings::new()?;
+    let config = Arc::new(Settings::new()?);
 
     if !Path::new(&config.database.path).exists() {
         println!("Database file does not exist. It will be created.");
@@ -33,7 +34,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .nest("/", create_route())
-        .layer(Extension(Arc::clone(&db)));
+        .layer(Extension(Arc::clone(&db)))
+        .layer(Extension(Arc::clone(&config)));
 
     let app = app.fallback(axum::routing::get(handle_404));
 

@@ -4,3 +4,4 @@ path = "./dev.db"
 [application]
 host = "127.0.0.1"
 port = 8000
+api_key = "your-secret-api-key-here"
